@@ -40,7 +40,7 @@ public:
     void mouseEnter (const MouseEvent& e) override { Slider::mouseEnter (e); repaint(); }
     void mouseExit  (const MouseEvent& e) override { Slider::mouseExit (e);  repaint(); }
 
-    float intensity() const { return sun ? (float) std::pow (valueToProportionOfLength (getValue()), 1.25) : 0.0f; }
+    float intensity()  { return sun ? (float) std::pow (valueToProportionOfLength (getValue()), 1.25) : 0.0f; }
     bool isSun() const { return sun; }
 
 private:
