@@ -38,8 +38,8 @@ public:
     void paint (Graphics& g) override
     {
         const auto all = getLocalBounds().toFloat();
-        g.setGradientFill (ColourGradient (Colour (0xff0b0b0e).withAlpha (0.78f), 0, 0, Colour (0xff050507).withAlpha (0.88f), 0, all.getBottom(), false));
-        g.fillRoundedRectangle (all.reduced (1.0f), 7.0f);
+        g.setGradientFill (ColourGradient (Colour (0xff0b0720).withAlpha (0.80f), 0, 0, Colour (0xff04020c).withAlpha (0.90f), 0, all.getBottom(), false));
+        g.fillRoundedRectangle (all.reduced (1.0f), 16.0f);
 
         drawGrid (g);
         drawBands (g);
@@ -48,11 +48,11 @@ public:
         drawTransferInset (g);
 
         g.setColour (Colour (0xff0a0a0c));
-        g.drawRoundedRectangle (all.reduced (1.0f), 7.0f, 3.0f);
-        g.setColour (Colour (0xff6c6e76));
-        g.drawRoundedRectangle (all.reduced (2.5f), 6.0f, 1.0f);
+        g.drawRoundedRectangle (all.reduced (1.0f), 16.0f, 3.0f);
+        g.setColour (Colour (0xff8f7fd0));
+        g.drawRoundedRectangle (all.reduced (2.5f), 15.0f, 1.0f);
         g.setGradientFill (ColourGradient (Colours::white.withAlpha (0.05f), 0, all.getY(), Colours::transparentWhite, 0, all.getY() + 60, false));
-        g.fillRoundedRectangle (all.reduced (3.0f).withHeight (60), 5.0f);
+        g.fillRoundedRectangle (all.reduced (3.0f).withHeight (60), 14.0f);
     }
 
     //==========================================================================

@@ -234,52 +234,127 @@ inline void drawExplodedPlanet (Graphics& g, Point<float> c, float R, int seed, 
     }
 }
 
-//------------------------------------------------------------------ whole backdrop
+//------------------------------------------------------------------ blurred copy, shown behind the glass panels
+inline Image makeFrosted (const Image& bg, int divisor = 6, int radius = 3, int passes = 3)
+{
+    const int w = jmax (1, bg.getWidth() / divisor), h = jmax (1, bg.getHeight() / divisor);
+    Image lowRes (Image::ARGB, w, h, true);
+    {
+        Graphics lg (lowRes);
+        lg.setImageResamplingQuality (Graphics::highResamplingQuality);
+        lg.drawImage (bg, 0, 0, w, h, 0, 0, bg.getWidth(), bg.getHeight());
+    }
+
+    std::vector<float> ch[3];
+    for (auto& v : ch) v.assign ((size_t) (w * h), 0.0f);
+    {
+        Image::BitmapData bd (lowRes, Image::BitmapData::readOnly);
+        for (int y = 0; y < h; ++y)
+            for (int x = 0; x < w; ++x)
+            {
+                const Colour c = bd.getPixelColour (x, y);
+                const size_t i = (size_t) (y * w + x);
+                ch[0][i] = c.getFloatRed(); ch[1][i] = c.getFloatGreen(); ch[2][i] = c.getFloatBlue();
+            }
+    }
+
+    std::vector<float> tmp ((size_t) (w * h), 0.0f);
+    const float norm = 1.0f / (float) (2 * radius + 1);
+    for (auto& v : ch)
+        for (int pass = 0; pass < passes; ++pass)
+        {
+            for (int y = 0; y < h; ++y)
+                for (int x = 0; x < w; ++x)
+                {
+                    float sum = 0.0f;
+                    for (int k = -radius; k <= radius; ++k) sum += v[(size_t) (y * w + jlimit (0, w - 1, x + k))];
+                    tmp[(size_t) (y * w + x)] = sum * norm;
+                }
+            for (int y = 0; y < h; ++y)
+                for (int x = 0; x < w; ++x)
+                {
+                    float sum = 0.0f;
+                    for (int k = -radius; k <= radius; ++k) sum += tmp[(size_t) (jlimit (0, h - 1, y + k) * w + x)];
+                    v[(size_t) (y * w + x)] = sum * norm;
+                }
+        }
+
+    {
+        Image::BitmapData bd (lowRes, Image::BitmapData::writeOnly);
+        for (int y = 0; y < h; ++y)
+            for (int x = 0; x < w; ++x)
+            {
+                const size_t i = (size_t) (y * w + x);
+                bd.setPixelColour (x, y, Colour::fromFloatRGBA (ch[0][i], ch[1][i], ch[2][i], 1.0f));
+            }
+    }
+    return lowRes;
+}
+
+//------------------------------------------------------------------ whole backdrop: deep violet space
 inline Image createBackground (int W, int H)
 {
     Image img (Image::ARGB, W, H, true);
     Graphics g (img);
-    g.setGradientFill (ColourGradient (Colour (0xff050509), 0, 0, Colour (0xff0b0508), (float) W, (float) H, false));
+
+    ColourGradient base (Colour (0xff060316), 0.0f, 0.0f, Colour (0xff10052a), (float) W, (float) H, false);
+    base.addColour (0.5, Colour (0xff190a3a));
+    g.setGradientFill (base);
     g.fillAll();
 
-    // nebula
+    // ethereal nebula: domain-warped noise at low resolution, upscaled for silky edges
+    auto nebula = [&] (int seed, float scale, float thresh, float soft, Colour a, Colour b, float alpha, float ox, float oy)
     {
-        const int nw = W / 4, nh = H / 4;
+        const int nw = W / 5, nh = H / 5;
         Image neb (Image::ARGB, nw, nh, true);
         {
             Image::BitmapData bd (neb, Image::BitmapData::writeOnly);
             for (int y = 0; y < nh; ++y)
                 for (int x = 0; x < nw; ++x)
                 {
-                    const float fx = (float) x * 4.0f, fy = (float) y * 4.0f;
-                    const float n1 = fbm (fx * 0.0045f, fy * 0.0045f, 101, 5);
-                    const float n2 = fbm (fx * 0.0080f + 40.0f, fy * 0.0080f, 202, 4);
-                    const float m = sstep ((n1 - 0.42f) / 0.32f);
-                    bd.setPixelColour (x, y, Colour::fromFloatRGBA (0.22f + 0.40f * n2, 0.05f + 0.04f * n2, 0.34f - 0.12f * n2, m * 0.32f));
+                    const float fx = (float) x * 5.0f + ox, fy = (float) y * 5.0f + oy;
+                    const float wx = fbm (fx * scale * 0.7f + 11.0f, fy * scale * 0.7f, seed + 3, 3);
+                    const float wy = fbm (fx * scale * 0.7f, fy * scale * 0.7f + 37.0f, seed + 5, 3);
+                    const float n = fbm (fx * scale + wx * 2.2f, fy * scale + wy * 2.2f, seed, 5);
+                    const float m = sstep ((n - thresh) / soft);
+                    const float t = fbm (fx * scale * 1.6f + 90.0f, fy * scale * 1.6f, seed + 9, 3);
+                    bd.setPixelColour (x, y, a.interpolatedWith (b, t).withAlpha (m * alpha));
                 }
         }
         g.setImageResamplingQuality (Graphics::highResamplingQuality);
         g.drawImage (neb, 0, 0, W, H, 0, 0, nw, nh);
+    };
+    nebula (101, 0.0036f, 0.38f, 0.40f, Colour (0xff5a2bd6), Colour (0xffb64fd6), 0.46f, 0.0f, 0.0f);
+    nebula (202, 0.0058f, 0.47f, 0.30f, Colour (0xff2b3fc2), Colour (0xff7d3fe6), 0.32f, 400.0f, 120.0f);
+    nebula (303, 0.0030f, 0.52f, 0.32f, Colour (0xffd9559f), Colour (0xff8a3fe6), 0.20f, 800.0f, 300.0f);
+
+    // soft central bloom
+    {
+        const float cx = (float) W * 0.5f, cy = (float) H * 0.42f;
+        g.setGradientFill (ColourGradient (Colour::fromFloatRGBA (0.58f, 0.34f, 1.0f, 0.22f), cx, cy,
+                                           Colours::transparentBlack, cx + (float) W * 0.6f, cy, true));
+        g.fillAll();
     }
 
     // stars
     {
         Random rnd (20240611);
-        for (int i = 0; i < 1500; ++i)
+        for (int i = 0; i < 1700; ++i)
         {
             const float x = rnd.nextFloat() * (float) W, y = rnd.nextFloat() * (float) H, m = rnd.nextFloat();
-            const Colour tint = rnd.nextFloat() < 0.2f ? Colour (0xffaec8ff) : rnd.nextFloat() < 0.3f ? Colour (0xffffd6b0) : Colours::white;
-            if (m > 0.992f)
+            const float pick = rnd.nextFloat();
+            const Colour tint = pick < 0.25f ? Colour (0xffbfa8ff) : pick < 0.40f ? Colour (0xff9fc2ff) : pick < 0.50f ? Colour (0xffffb8e6) : Colours::white;
+            if (m > 0.993f)
             {
-                g.setGradientFill (ColourGradient (tint.withAlpha (0.6f), x, y, tint.withAlpha (0.0f), x + 9.0f, y, true));
-                g.fillEllipse (x - 9, y - 9, 18, 18);
-                g.setColour (tint.withAlpha (0.35f));
-                g.drawLine (x - 8, y, x + 8, y, 0.8f); g.drawLine (x, y - 8, x, y + 8, 0.8f);
+                g.setGradientFill (ColourGradient (tint.withAlpha (0.55f), x, y, tint.withAlpha (0.0f), x + 10.0f, y, true));
+                g.fillEllipse (x - 10, y - 10, 20, 20);
+                g.setColour (tint.withAlpha (0.30f));
+                g.drawLine (x - 9, y, x + 9, y, 0.8f); g.drawLine (x, y - 9, x, y + 9, 0.8f);
                 g.setColour (Colours::white); g.fillEllipse (x - 1.2f, y - 1.2f, 2.4f, 2.4f);
             }
             else
             {
-                g.setColour (tint.withAlpha (0.15f + 0.65f * m * m * m));
+                g.setColour (tint.withAlpha (0.12f + 0.62f * m * m * m));
                 g.fillRect (x, y, m > 0.9f ? 1.6f : 1.0f, m > 0.9f ? 1.6f : 1.0f);
             }
         }
@@ -288,7 +363,7 @@ inline Image createBackground (int W, int H)
     // the faint red sun, far behind everything
     {
         const float cx = (float) W * 0.50f, cy = (float) H * 0.50f;
-        g.setGradientFill (ColourGradient (Colour::fromFloatRGBA (0.9f, 0.12f, 0.04f, 0.10f), cx, cy, Colours::transparentBlack, cx + (float) W * 0.55f, cy, true));
+        g.setGradientFill (ColourGradient (Colour::fromFloatRGBA (0.9f, 0.12f, 0.10f, 0.10f), cx, cy, Colours::transparentBlack, cx + (float) W * 0.55f, cy, true));
         g.fillRect (0, 0, W, H);
         const int S = 640;
         const Image sun = createSunImage (S, 175.0f);
@@ -296,16 +371,24 @@ inline Image createBackground (int W, int H)
         g.drawImage (sun, Rectangle<float> (cx - (float) S * 0.62f, cy - (float) S * 0.62f, (float) S * 1.24f, (float) S * 1.24f));
     }
 
-    // exploded planets
-    drawExplodedPlanet (g, { (float) W * 0.68f, 44.0f },        36.0f, 11, 0);   // header
-    drawExplodedPlanet (g, { (float) W - 70.0f, (float) H - 120.0f }, 105.0f, 23, 3);
-    drawExplodedPlanet (g, { 70.0f, (float) H - 250.0f },        78.0f, 37, 1);
-    drawExplodedPlanet (g, { (float) W * 0.30f, (float) H - 40.0f }, 52.0f, 51, 2);
+    // exploded planets, drawn on their own layer so they can sit softly in the scene
+    {
+        Image planets (Image::ARGB, W, H, true);
+        {
+            Graphics pg (planets);
+            drawExplodedPlanet (pg, { 790.0f, 44.0f },                   30.0f, 11, 0);
+            drawExplodedPlanet (pg, { (float) W - 70.0f, (float) H - 120.0f }, 105.0f, 23, 3);
+            drawExplodedPlanet (pg, { 70.0f, (float) H - 250.0f },        78.0f, 37, 1);
+            drawExplodedPlanet (pg, { (float) W * 0.30f, (float) H - 40.0f }, 52.0f, 51, 2);
+        }
+        g.setOpacity (0.85f);
+        g.drawImageAt (planets, 0, 0);
+    }
 
     // vignette
     {
         const float dmax = std::sqrt ((float) (W * W + H * H)) * 0.5f;
-        ColourGradient v (Colours::transparentBlack, (float) W * 0.5f, (float) H * 0.5f, Colour (0xaa000000), (float) W * 0.5f + dmax, (float) H * 0.5f, true);
+        ColourGradient v (Colours::transparentBlack, (float) W * 0.5f, (float) H * 0.5f, Colour (0xb0050212), (float) W * 0.5f + dmax, (float) H * 0.5f, true);
         v.addColour (0.55, Colours::transparentBlack);
         g.setGradientFill (v);
         g.fillAll();
